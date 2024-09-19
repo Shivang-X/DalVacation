@@ -1,0 +1,424 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to create a hotel booking system chatbot with AWS Lex and Lambda functions.
+
+Parameters:
+  RoleArn:
+    Description: Existing IAM role ARN
+    Type: String
+    Default: arn:aws:iam::166633657396:role/LabRole
+  DynamoDBTableName:
+    Description: DynamoDB table name for room information
+    Type: String
+    Default: rooms
+  GCPProjectId:
+    Description: Google Cloud Platform Project ID
+    Type: String
+    Default: YOUR_PROJECT_ID
+  UserPoolId:
+    Description: AWS Cognito User Pool ID
+    Type: String
+    Default: YOUR_USER_POOL_ID
+
+Resources:
+  # Combined Lambda Function for Getting Room Information and Publishing Message to Agent
+  ValidateAndStoreLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'validateAndStore'
+      Handler: 'index.handler'
+      Role: !Ref RoleArn
+      Layers:
+        - !Ref LaxLayer
+      Runtime: 'python3.8'
+      Code:
+        ZipFile: |
+          import os
+          import boto3
+          import random
+          from boto3.dynamodb.conditions import Key
+          from google.cloud import pubsub_v1
+
+          # Initialize DynamoDB resource
+          dynamodb = boto3.resource('dynamodb')
+
+          # Initialize Cognito client
+          cognito_client = boto3.client('cognito-idp')
+
+          def get_room(event):
+              """
+              Retrieves room information based on the booking reference from DynamoDB.
+
+              Args:
+              - event (dict): The input event containing session state and intent details.
+
+              Returns:
+              - dict: Response object with session state and intent details.
+              """
+              try:
+                  table_name = os.environ['DYNAMODB_TABLE_NAME']
+                  table = dynamodb.Table(table_name)
+
+                  # Extract reference number from slots
+                  booking_reference_slot = event['sessionState']['intent']['slots'].get('BookingReference')
+                  reference_number = booking_reference_slot.get('value', {}).get('originalValue') if booking_reference_slot else None
+
+                  # If reference number is not provided, elicit the slot
+                  if not reference_number:
+                      return elicit_slot_response('BookingReference', 'Please provide your booking reference number.', event)
+
+                  response = table.get_item(Key={'reference_number': reference_number})
+
+                  # If item found in database, return room details
+                  if 'Item' in response:
+                      room_number = response['Item']['room_number']
+                      duration = response['Item']['duration']
+                      return close_response(event, f"Room number is {room_number} and the duration of stay is {duration} days.")
+                  else:
+                      # If reference number does not exist in database
+                      return close_response(event, "The reference number provided does not exist.", fulfillment_state="Failed")
+
+              except Exception as e:
+                  return close_response(event, f"An error occurred: {str(e)}", fulfillment_state="Failed")
+
+          def check_user_email(email):
+              """
+              Validates if the user exists in the Cognito user pool.
+
+              Args:
+              - email (str): Email address to validate.
+
+              Returns:
+              - bool: True if user exists, False otherwise.
+              """
+              try:
+                  user_pool_id = os.environ['USER_POOL_ID']
+                  response = cognito_client.list_users(
+                      UserPoolId=user_pool_id,
+                      Filter=f'email="{email}"'
+                  )
+                  return bool(response.get('Users'))
+
+              except Exception as e:
+                  return f"An error occurred: {str(e)}"
+
+          def publish_message(event):
+              """
+              Publishes a message to a random GCP Pub/Sub topic.
+
+              Args:
+              - event (dict): The input event containing session state and intent details.
+
+              Returns:
+              - dict: Response object with session state and intent details.
+              """
+              try:
+                  project_id = os.environ['GCP_PROJECT_ID']
+                  client = pubsub_v1.PublisherClient()
+                  topics = [topic.name for topic in client.list_topics(request={"project": f"projects/{project_id}"})]
+                  topic = random.choice(topics)
+                  topic_path = client.topic_path(project_id, topic.split('/')[-1])
+
+                  email = event['sessionState']['intent']['slots'].get('Email', {}).get('value', {}).get('originalValue')
+                  message = event['sessionState']['intent']['slots'].get('MessageContent', {}).get('value', {}).get('originalValue')
+
+                  if not email:
+                      return elicit_slot_response('Email', 'Please provide your email address.', event)
+
+                  if not check_user_email(email):
+                      return elicit_slot_response('Email', 'The email provided does not exist. Please check your email address.', event)
+
+                  if not message:
+                      return elicit_slot_response('MessageContent', 'Please provide the message you want to send to the agent.', event)
+
+                  future = client.publish(topic_path, message.encode('utf-8'))
+                  future.result()
+                  return close_response(event, "Your message has been sent to the property agent.")
+
+              except Exception as e:
+                  return close_response(event, f"An error occurred: {str(e)}", fulfillment_state="Failed")
+
+          def elicit_slot_response(slot_to_elicit, message_content, event):
+              """
+              Generates a response to elicit a slot from the user.
+
+              Args:
+              - slot_to_elicit (str): Name of the slot to elicit.
+              - message_content (str): Content of the message to be displayed to the user.
+              - event (dict): The input event containing session state and intent details.
+
+              Returns:
+              - dict: Response object with session state and intent details.
+              """
+              return {
+                  "sessionState": {
+                      "dialogAction": {
+                          "type": "ElicitSlot",
+                          "slotToElicit": slot_to_elicit,
+                          "message": {
+                              "contentType": "PlainText",
+                              "content": message_content
+                          }
+                      },
+                      "intent": {
+                          "name": event['sessionState']['intent']['name'],
+                          "slots": event['sessionState']['intent']['slots'],
+                          "state": "InProgress"
+                      }
+                  }
+              }
+
+          def close_response(event, content, fulfillment_state="Fulfilled"):
+              """
+              Generates a close response to end the conversation.
+
+              Args:
+              - event (dict): The input event containing session state and intent details.
+              - content (str): Content of the response message.
+              - fulfillment_state (str): State of fulfillment ("Fulfilled" or "Failed").
+
+              Returns:
+              - dict: Response object with session state, intent details, and message content.
+              """
+              return {
+                  "sessionState": {
+                      "dialogAction": {
+                          "type": "Close"
+                      },
+                      "intent": {
+                          "name": event['sessionState']['intent']['name'],
+                          "slots": event['sessionState']['intent']['slots'],
+                          "state": fulfillment_state
+                      }
+                  },
+                  "messages": [
+                      {
+                          "contentType": "PlainText",
+                          "content": content
+                      }
+                  ]
+              }
+
+          def handler(event, context):
+              """
+              Main handler function that routes the incoming request to the appropriate intent handler.
+
+              Args:
+              - event (dict): The input event containing session state and intent details.
+              - context (object): Context object passed to Lambda function.
+
+              Returns:
+              - dict: Response object with session state, intent details, and message content.
+              """
+              try:
+                  intent_name = event['sessionState']['intent']['name']
+
+                  if intent_name == 'GetRoomDetailsIntent':
+                      return get_room(event)
+                  elif intent_name == 'PublishMessageToAgentIntent':
+                      return publish_message(event)
+                  else:
+                      return close_response(event, "Invalid intent.", fulfillment_state="Failed")
+
+              except Exception as e:
+                  return close_response(event, f"An unexpected error occurred: {str(e)}", fulfillment_state="Failed")
+
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref DynamoDBTableName
+          GCP_PROJECT_ID: !Ref GCPProjectId
+          USER_POOL_ID: !Ref UserPoolId
+
+  # Permission for Lex Bot to invoke Lambda function
+  LambdaInvokePermission:
+    DependsOn: HotelBookingBotAlias
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ValidateAndStoreLambdaFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: lex.amazonaws.com
+      SourceArn:  !GetAtt HotelBookingBotAlias.Arn
+
+  # Layers
+  LaxLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - python3.8
+      Content:
+        S3Bucket: dal-vacation
+        S3Key: lex-layer.zip
+      Description: Lax Layer
+
+  # Lex Bot
+  HotelBookingBot:
+    DependsOn:
+      - ValidateAndStoreLambdaFunction
+    Type: AWS::Lex::Bot
+    Properties:
+      Name: "HotelBookingBot"
+      RoleArn: !Ref RoleArn
+      DataPrivacy:
+        ChildDirected: false
+      IdleSessionTTLInSeconds: 300
+      Description: "A bot to handle hotel bookings"
+      BotLocales:
+        - LocaleId: "en_US"
+          Description: "English (US)"
+          NluConfidenceThreshold: 0.40
+          VoiceSettings:
+            VoiceId: "Ivy"
+          Intents:
+            - Name: "RegisterNavigationIntent"
+              Description: "Provides basic navigation information"
+              SampleUtterances:
+                - Utterance: "How do I register?"
+                - Utterance: "Can I know registration steps?"
+              DialogCodeHook:
+                Enabled: false
+              IntentClosingSetting:
+                ClosingResponse:
+                  MessageGroupsList:
+                    - Message:
+                        PlainTextMessage:
+                          Value: "Registration: Click Register Button on top right corner"
+                  AllowInterrupt: true
+            - Name: "FindBookingNavigationIntent"
+              Description: "Provides basic navigation information"
+              SampleUtterances:
+                - Utterance: "How do I book a room?"
+                - Utterance: "Where can I find the room booking option?"
+              DialogCodeHook:
+                Enabled: false
+              IntentClosingSetting:
+                ClosingResponse:
+                  MessageGroupsList:
+                    - Message:
+                        PlainTextMessage:
+                          Value: "Bookings: Click Book Room / Recreation Book"
+                  AllowInterrupt: true
+            - Name: "GetRoomDetailsIntent"
+              Description: "Gets room number and duration of stay based on booking reference number"
+              SampleUtterances:
+                - Utterance: "What is my room number?"
+                - Utterance: "How long is my stay?"
+              DialogCodeHook:
+                Enabled: true
+              SlotPriorities:
+                - Priority: 1
+                  SlotName: "BookingReference"
+              Slots:
+                - Name: "BookingReference"
+                  SlotTypeName: "AMAZON.AlphaNumeric"
+                  ValueElicitationSetting:
+                    SlotConstraint: "Required"
+                    PromptSpecification:
+                      MessageGroupsList:
+                        - Message:
+                            PlainTextMessage:
+                              Value: "Please provide your booking reference number."
+                      MaxRetries: 3
+                      AllowInterrupt: true
+            - Name: "PublishMessageToAgentIntent"
+              Description: "Publishes a message to a property agent"
+              SampleUtterances:
+                - Utterance: "I have an issue with my booking."
+                - Utterance: "I need to talk to an agent."
+              DialogCodeHook:
+                Enabled: true
+              SlotPriorities:
+                - Priority: 1
+                  SlotName: "Email"
+                - Priority: 2
+                  SlotName: "MessageContent"
+              Slots:
+                - Name: "Email"
+                  SlotTypeName: "AMAZON.EmailAddress"
+                  ValueElicitationSetting:
+                    SlotConstraint: "Required"
+                    PromptSpecification:
+                      MessageGroupsList:
+                        - Message:
+                            PlainTextMessage:
+                              Value: "Please provide your email address."
+                      MaxRetries: 3
+                      AllowInterrupt: true
+                - Name: "MessageContent"
+                  SlotTypeName: "AMAZON.FreeFormInput"
+                  ValueElicitationSetting:
+                    SlotConstraint: "Required"
+                    PromptSpecification:
+                      MessageGroupsList:
+                        - Message:
+                            PlainTextMessage:
+                              Value: "Please describe your issue."
+                      MaxRetries: 3
+                      AllowInterrupt: true
+            - Name: "FallbackIntent"
+              Description: "Fallback intent when no other intent matches"
+              ParentIntentSignature: "AMAZON.FallbackIntent"
+              IntentClosingSetting:
+                ClosingResponse:
+                  MessageGroupsList:
+                    - Message:
+                        PlainTextMessage:
+                          Value: "Sorry, I didn't understand that. Can you rephrase your question?"
+                      Variations:
+                        - PlainTextMessage:
+                            Value: "I apologize, but I didn't get that. Could you ask differently?"
+                        - PlainTextMessage:
+                            Value: "I'm having trouble understanding. Please try again."
+                  AllowInterrupt: true
+
+  # Lex Bot Version
+  HotelBookingBotVersion:
+    DependsOn: HotelBookingBot
+    Type: AWS::Lex::BotVersion
+    Properties:
+      BotId: !Ref HotelBookingBot
+      BotVersionLocaleSpecification:
+        - LocaleId: "en_US"
+          BotVersionLocaleDetails:
+            SourceBotVersion: DRAFT
+      Description: "Chat Bot Version"
+
+  # Lex Bot Alias
+  HotelBookingBotAlias:
+    DependsOn:
+      - HotelBookingBotVersion
+      - LogGroup
+    Type: AWS::Lex::BotAlias
+    Properties:
+      BotAliasName: "ProdAlias"
+      BotId: !Ref HotelBookingBot
+      BotVersion: !GetAtt HotelBookingBotVersion.BotVersion
+      BotAliasLocaleSettings:
+        - LocaleId: "en_US"
+          BotAliasLocaleSetting:
+            CodeHookSpecification:
+              LambdaCodeHook:
+                CodeHookInterfaceVersion: "1.0"
+                LambdaArn: !GetAtt ValidateAndStoreLambdaFunction.Arn
+            Enabled: true
+      ConversationLogSettings:
+        TextLogSettings:
+          - Enabled: true
+            Destination:
+              CloudWatch:
+                CloudWatchLogGroupArn: !GetAtt LogGroup.Arn
+                LogPrefix: "HotelBookingBotLogs"
+      Description: "Production alias for the Hotel Booking Bot"
+
+  # Lex Bot Logs
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: "/aws/lex/HotelBookingBot"
+      RetentionInDays: 14
+
+Outputs:
+  LexBotName:
+    Description: 'Name of the Lex Bot'
+    Value: !Ref HotelBookingBot
+  LexBotAliasName:
+    Description: 'Alias Name of the Lex Bot'
+    Value: !Ref HotelBookingBotAlias

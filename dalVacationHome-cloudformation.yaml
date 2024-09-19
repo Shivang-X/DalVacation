@@ -1,0 +1,522 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  LabRoleArn:
+    Type: String
+    Description: 'The ARN of the role to assume'
+    Default: arn:aws:iam::809846219927:role/LabRole
+  
+  BucketName:
+    Type: String
+    Description: 'The name of the S3 bucket to store the Lambda code'
+    Default: 'serverless-dalvacationhome'
+
+Resources:
+
+  #Lambda Function Layers
+  NodeJsLayers:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+        LayerName: node
+        Description: Nodejs Layer
+        Content:
+          S3Bucket: 'serverless-dalvacationhome'
+          S3Key: node.zip
+        CompatibleRuntimes:
+          - nodejs20.x
+
+  PythonLayers:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+        LayerName: roomBooking_Layer
+        Description: Python Layer
+        Content:
+          S3Bucket: 'serverless-dalvacationhome'
+          S3Key: roomBooking_Layer.zip
+        CompatibleRuntimes:
+              - python3.9
+
+
+  LookerStudioLayers:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+        LayerName: node-lookerstudio
+        Description: Looker Studio Layer
+        Content:
+          S3Bucket: 'serverless-dalvacationhome'
+          S3Key: node-lookerstudio.zip
+        CompatibleRuntimes:
+              - nodejs20.x
+
+  #Lambda Functions
+
+  #Signup
+  LambdaSignupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'signUp'
+      Handler: 'index.handler'
+      Role: !Ref LabRoleArn
+      Timeout: 50
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: 'signUp.zip'
+      Runtime: 'nodejs20.x'
+      Layers:
+        - !Ref NodeJsLayers
+
+  #SignIn
+  LambdaSigninFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'signIn'
+      Handler: 'index.handler'
+      Role: !Ref LabRoleArn
+      Timeout: 50
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: 'signIn.zip'
+      Runtime: 'nodejs20.x'
+      Layers:
+        - !Ref NodeJsLayers
+
+  # BookingDetailsDialogFlow
+  LambdaBookingDetailsDialogFlowFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'BookingDetailsDialogFlow'
+      Handler: 'index.handler'
+      Role: !Ref LabRoleArn
+      Timeout: 50
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: 'BookingDetailsDialogFlow.zip'
+      Runtime: 'python3.9'
+      Layers:
+        - !Ref PythonLayers
+
+  # RoomBookingRequest
+  LambdaRoomBookingRequestFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'roomBookingRequest'
+      Handler: 'index.handler'
+      Role: !Ref LabRoleArn
+      Timeout: 50
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: 'roomBookingRequest.zip'
+      Runtime: 'python3.9'
+
+  # GetRooms
+  LambdaGetRoomsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'getRooms'
+      Handler: 'index.handler'
+      Role: !Ref LabRoleArn
+      Timeout: 50
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: 'getRooms.zip'
+      Runtime: 'python3.9'
+
+  # RoomBooking
+  LambdaRoomBookingFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'roomBooking'
+      Handler: 'index.handler'
+      Role: !Ref LabRoleArn
+      Timeout: 50
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: 'roomBooking.zip'
+      Runtime: 'python3.9'
+      Environment:
+        Variables:
+          BOOKING_TABLE_NAME: Booking_Details
+          ROOMS_TABLE_NAME: Rooms
+      Layers:
+        - !Ref PythonLayers
+
+  # getUserProfile
+  LambdaGetUserProfileFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'getUserProfile'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'getUserProfile.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref NodeJsLayers
+
+  # deleteRoom
+  LambdaDeleteRoomFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'deleteRoom'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'deleteRoom.zip'
+        Runtime: 'python3.9'
+
+  # storeUserDetails
+  LambdaStoreUserDetailsFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'storeUserDetails'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'storeUserDetails.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref NodeJsLayers
+
+  # storeKey
+  LambdaStoreKeyFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'storeKey'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'storeKey.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref NodeJsLayers
+
+  # addRooms
+  LambdaAddRoomsFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'addRooms'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'addRooms.zip'
+        Runtime: 'python3.9'
+
+  # looker-reviews
+  LambdaLookerReviewsFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'looker-reviews'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'looker-reviews.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref LookerStudioLayers
+
+  # detailsForLookerStudio
+  LambdaDetailsForLookerStudioFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'detailsForLookerStudio'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'detailsForLookerStudio.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref LookerStudioLayers
+
+  # confirmUser
+  LambdaConfirmUserFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'confirmUser'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'confirmUser.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref NodeJsLayers
+
+  # confirmUser
+  LambdaGetSecurityQuestionFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'getSecurityQuestion'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'getSecurityQuestion.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref NodeJsLayers
+
+  # getKey
+  LambdaGetKeyFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'getKey'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'getKey.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref NodeJsLayers
+
+  # confirmSubscription
+  LambdaConfirmSubscriptionFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'confirmSubscription'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'confirmSubscription.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref NodeJsLayers
+
+  # sendEmail
+  LambdaSendEmailFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'sendEmail'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'sendEmail.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref NodeJsLayers
+
+  # storeSecurityQuestion
+  LambdaStoreSecurityQuestionFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'storeSecurityQuestion'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'storeSecurityQuestion.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref NodeJsLayers
+
+  # lookerStudioGetDetails
+  LambdaLookerStudioGetDetailsFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'lookerStudioGetDetails'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'lookerStudioGetDetails.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref LookerStudioLayers
+
+  # subscribeEmail
+  LambdaSubscribeEmailFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'subscribeEmail'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'subscribeEmail.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref NodeJsLayers
+
+  # updateRoom
+  LambdaUpdateRoomFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'updateRoom'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'updateRoom.zip'
+        Runtime: 'python3.9'
+
+  # createTopic
+  LambdaCreateTopicFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName: 'createTopic'
+        Handler: 'index.handler'
+        Role: !Ref LabRoleArn
+        Timeout: 50
+        Code:
+          S3Bucket: !Ref BucketName
+          S3Key: 'createTopic.zip'
+        Runtime: 'nodejs20.x'
+        Layers:
+          - !Ref NodeJsLayers
+
+  # Function URLS
+
+  # URL for RoomBookingRequest
+  UrlRoomBookingRequest:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      Cors: 
+        AllowHeaders: 
+          - '*'
+        AllowMethods: 
+          - '*'
+        AllowOrigins: 
+          - '*'
+        ExposeHeaders: 
+          - '*'
+      TargetFunctionArn: !GetAtt LambdaRoomBookingRequestFunction.Arn 
+
+  # URL for GetRooms
+  UrlGetRooms:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      Cors: 
+        AllowHeaders: 
+          - '*'
+        AllowMethods: 
+          - '*'
+        AllowOrigins: 
+          - '*'
+        ExposeHeaders: 
+          - '*'
+      TargetFunctionArn: !GetAtt LambdaGetRoomsFunction.Arn
+
+  # URL for RoomBooking
+  UrlRoomBooking:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      Cors: 
+        AllowHeaders: 
+          - '*'
+        AllowMethods: 
+          - '*'
+        AllowOrigins: 
+          - '*'
+        ExposeHeaders: 
+          - '*'
+      TargetFunctionArn: !GetAtt LambdaRoomBookingFunction.Arn
+
+  # URL for AddRooms
+  UrlAddRooms:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      Cors: 
+        AllowHeaders: 
+          - '*'
+        AllowMethods: 
+          - '*'
+        AllowOrigins: 
+          - '*'
+        ExposeHeaders: 
+          - '*'
+      TargetFunctionArn: !GetAtt LambdaAddRoomsFunction.Arn
+
+  RoomsTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: Rooms
+      AttributeDefinitions:
+        - AttributeName: roomId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: roomId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: '5'
+        WriteCapacityUnits: '5'
+    BookingsTable:
+      Type: 'AWS::DynamoDB::Table'
+      Properties:
+        TableName: Booking_Details
+        AttributeDefinitions:
+          - AttributeName: bookingReference
+            AttributeType: S
+        KeySchema:
+          - AttributeName: bookingReference
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: '5'
+          WriteCapacityUnits: '5'
+    UserDetails:
+      Type: 'AWS::DynamoDB::Table'
+      Properties:
+        TableName: UserDetails
+        AttributeDefinitions:
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: email
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: '5'
+          WriteCapacityUnits: '5'
+    UserSecurityQuestions:
+      Type: 'AWS::DynamoDB::Table'
+      Properties:
+        TableName: UserSecurityQuestions
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: 'N'
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: '5'
+          WriteCapacityUnits: '5'
+  Outputs:
+    RoomsTableArn:
+      Description: ARN of the Rooms DynamoDB Table
+      Value: RoomsTable.Arn
+    BookingsTableArn:
+      Description: ARN of the Bookings DynamoDB Table
+      Value: BookingsTable.Arn
+    UserDetailsArn:
+      Description: ARN of the UserDetails DynamoDB Table
+      Value: UserDetails.Arn
+    UserSecurityQuestionsArn:
+      Description: ARN of the UserSecurityQuestions DynamoDB Table
+      Value: UserSecurityQuestions.Arn
