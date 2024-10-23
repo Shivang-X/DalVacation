@@ -62,7 +62,7 @@ This application is built using a serverless architecture, employing various AWS
 - **Data Analysis & Visualization**: Google Natural Language API, LookerStudio, DynamoDB, GCP Storage
 - **Web Application Deployment**: React, GCP CloudRun, CloudFormation, GCP Cloud Deployment Manager
 
-![system architecture](SystemArchitecture.png "System Architecture")
+![system architecture](SystemArchitecture.jpeg "System Architecture")
 
 ## Modules
 
